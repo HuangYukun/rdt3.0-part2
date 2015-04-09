@@ -106,8 +106,9 @@ typedef u8b_t Packet[PAYLOAD+4];
 
 //global variables
 //expected seq num
-
+int expectedseqnum = 0;
 //last_acknum
+int last_acknum = 1;
 
 // typedef struct Packet
 // {
@@ -214,7 +215,7 @@ int rdt_send(int fd, char * msg, int length){
   FD_SET(fd, &master);
 
   int status;
-  u8b_t buf[PAYLOAD+4];
+  u8b_t buf[PAYLOAD+4]; //the buf may not need to be so large, perhaps only header size
   int nbytes;
   //do
   for(;;) {
@@ -239,6 +240,7 @@ int rdt_send(int fd, char * msg, int length){
 	  }
 	  else{ //this else may be replaced by a loop
 	  	if (FD_ISSET(fd, &read_fds)){
+	  		//if corrupted
 	  		if ((nbytes = recv(fd, buf, sizeof buf, 0)) <= 0) {
 				// got error or connection closed by client
 				if (nbytes == 0) {
@@ -252,10 +254,25 @@ int rdt_send(int fd, char * msg, int length){
 			}else{
 				//if is ACK
 				if (buf[0] == 0){
-
+					//by this we assume that checksum has guaranteed no error will occur
+					if (last_acknum == buf[1]){
+						//not the expected ACK, just ignore it
+					}
+					else{
+						if (last_acknum == 1){
+							last_acknum == 0;
+							//break the for loop
+							break;
+						}
+						else{
+							last_acknum == 1;
+							break;
+						}
+					}
 				}
 				else {
-					//data? corrupted?
+					//if is data
+					//this is a sender, how can we receive it
 				}
 			}
 	  	}
