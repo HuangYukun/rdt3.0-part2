@@ -103,9 +103,11 @@ u16b_t checksum(u8b_t *msg, u16b_t bytecount)
 
 // define your data structures and global variables in here
 typedef u8b_t Packet[PAYLOAD+4];
-// {
-// 	u8b_t msg[PAYLOAD];
-// };  Packet;
+
+//global variables
+//expected seq num
+
+//last_acknum
 
 // typedef struct Packet
 // {
@@ -194,12 +196,71 @@ int rdt_send(int fd, char * msg, int length){
   u16b_t ckm = checksum(pkt, length+2);
   //set checksum in the header
   memcpy(&pkt[2], (char*)&ckm, 2);
-  //udt_send
-  udt_send(1, pkt, length+4, 0);
+  //udt_send(fd, pkt, pktLen, flag)
+  if(udt_send(fd, pkt, length+4, 0) == -1){
+  	perror("send");
+  }
+  //set flag as 0, requires checking
+  //what is returning from  udt_send()?
+  //Ans: the # of bytes sent
 
+  struct timeval timer;
+  //setting description set
+  fd_set master;
+  fd_set read_fds;
+  FD_ZERO(&master);
+  FD_ZERO(&read_fds);
 
-  //set up the variables to use select()
+  FD_SET(fd, &master);
 
+  int status;
+  u8b_t buf[PAYLOAD+4];
+  int nbytes;
+  //do
+  for(;;) {
+	  //repeat until received expected ACK
+
+	  read_fds = master;
+	  //setting timeout
+	  timer.tv_sec = 5;
+	  timer.tv_usec = 0;
+	  // <0 => error
+	  // ==0 => timeout
+	  // >0 => receive a packet
+	  if ((status = select(fd, &read_fds, NULL, NULL, &timer)) == -1){
+	  	perror("select ");
+	  	exit(4);
+	  } else if(status == 0){
+	  	//timeout happens
+	  	//retransmit the packet
+	  	if(udt_send(fd, pkt, length+4, 0) == -1){
+	  		perror("send");
+	  	}
+	  }
+	  else{ //this else may be replaced by a loop
+	  	if (FD_ISSET(fd, &read_fds)){
+	  		if ((nbytes = recv(fd, buf, sizeof buf, 0)) <= 0) {
+				// got error or connection closed by client
+				if (nbytes == 0) {
+				// connection closed
+					printf("selectserver: socket %d hung up\n", fd);
+				} else {
+					perror("recv");
+				}
+				close(fd); // bye!
+				FD_CLR(fd, &master); // remove from master set
+			}else{
+				//if is ACK
+				if (buf[0] == 0){
+
+				}
+				else {
+					//data? corrupted?
+				}
+			}
+	  	}
+	  }
+  }
 }
 
 /* Application process calls this function to wait for a message 
