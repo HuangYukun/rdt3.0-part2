@@ -103,6 +103,7 @@ u16b_t checksum(u8b_t *msg, u16b_t bytecount)
 
 // define your data structures and global variables in here
 typedef u8b_t Packet[PAYLOAD+4];
+typedef u8b_t ACK[4];
 
 //global variables
 //expected seq num
@@ -215,7 +216,7 @@ int rdt_send(int fd, char * msg, int length){
   FD_SET(fd, &master);
 
   int status;
-  u8b_t buf[PAYLOAD+4]; //the buf may not need to be so large, perhaps only header size
+  u8b_t buf[4]; //header size
   int nbytes;
   //do
   for(;;) {
@@ -241,6 +242,7 @@ int rdt_send(int fd, char * msg, int length){
 	  else{ //this else may be replaced by a loop
 	  	if (FD_ISSET(fd, &read_fds)){
 	  		//if corrupted
+	  		u16b_t ACK_check;
 	  		if ((nbytes = recv(fd, buf, sizeof buf, 0)) <= 0) {
 				// got error or connection closed by client
 				if (nbytes == 0) {
@@ -251,7 +253,12 @@ int rdt_send(int fd, char * msg, int length){
 				}
 				close(fd); // bye!
 				FD_CLR(fd, &master); // remove from master set
-			}else{
+			}else if ((ACK_check = checksum(buf, 4)) != 0){
+				//message corrupted
+				perror("corrupted");
+				//the timer should not be reset
+			}
+			else{
 				//if is ACK
 				if (buf[0] == 0){
 					//by this we assume that checksum has guaranteed no error will occur
@@ -260,19 +267,21 @@ int rdt_send(int fd, char * msg, int length){
 					}
 					else{
 						if (last_acknum == 1){
-							last_acknum == 0;
+							last_acknum = 0;
 							//break the for loop
-							break;
+							return length;
 						}
 						else{
-							last_acknum == 1;
-							break;
+							last_acknum = 1;
+							return length;
 						}
 					}
 				}
 				else {
 					//if is data
+
 					//this is a sender, how can we receive it
+					//ignore it
 				}
 			}
 	  	}
@@ -289,6 +298,69 @@ int rdt_send(int fd, char * msg, int length){
 */
 int rdt_recv(int fd, char * msg, int length){
 //implement the Stop-and-Wait ARQ (rdt3.0) logic
+	for(;;) {
+		int receive = recv(fd, msg, length, 0);
+		if (receive <= 0){
+			if (receive == 0) {
+				// connection closed
+					printf("selectserver: socket %d hung up\n", fd);
+				} else {
+					perror("recv");
+				}
+		}
+		//msg is the packet
+		//type cast for checksum
+		u8b_t* checksum_msg = (u8b_t*)msg;
+		u16b_t ckm = checksum(checksum_msg, length);
+		//make ACK packet
+		ACK ack;
+		ack[0] = 0;
+		ack[2] = 0;
+		ack[3] = 0;
+		if (ckm != 0){
+			//corrupted
+			ack[1] = last_acknum;
+			//calculate checksum for ACK
+			u16b_t ckm = checksum(ack, 4);
+			//set checksum in the header
+			memcpy(&ack[2], (char*)&ckm, 2);
+			//so resend the ACK
+			if (udt_send(fd, ack, 4, 0) == -1){
+				perror("send");
+			}
+		}else{
+			if (msg[0] == 1){
+				//is DATA
+				if (msg[1] == expectedseqnum){
+					if (last_acknum == 0){
+						ack[1] = 1;
+						u16b_t ckm = checksum(ack, 4);
+						memcpy(&ack[2], (char*)&ckm, 2);
+						if (udt_send(fd, ack, 4, 0) == -1){
+							perror("send");
+						}
+						else{
+							return length;
+						}
+					}
+					else{
+						ack[1] = 0;
+						u16b_t ckm = checksum(ack, 4);
+						memcpy(&ack[2], (char*)&ckm, 2);
+						if (udt_send(fd, ack, 4, 0) == -1){
+							perror("send");
+						}
+						else{
+							return length;
+						}
+					}
+				}
+			}else{
+				//is ACK
+				//ignore
+			}
+		}
+	}
 }
 
 /* Application process calls this function to close the RDT socket.
