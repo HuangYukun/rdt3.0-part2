@@ -133,7 +133,9 @@ int main(void)
 		*/
 		timer.tv_sec = 5;
 		timer.tv_usec = 0;
-		if ((status = select(fdmax+1, &read_fds, NULL, NULL, &timer)) == -1) {
+		status = select(fdmax+1, &read_fds, NULL, NULL, &timer);
+		printf("select status %d\n", status);
+		if (status == -1) {
 			perror("select");
 			exit(4);
 		} else if (status == 0) {  // added by atctam

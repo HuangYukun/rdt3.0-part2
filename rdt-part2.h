@@ -107,8 +107,8 @@ typedef u8b_t ACK[4];
 
 //global variables
 //expected seq num
-int expectedseqnum = 0;
-//last_acknum
+int expectedseqnum = '0'; //receiver use
+//last acknum
 u8b_t last_acknum = '1';
 
 // typedef struct Packet
@@ -185,8 +185,6 @@ int rdt_send(int fd, char * msg, int length){
 //must use the udt_send() function to send data via the unreliable layer
   Packet pkt;
   //control info
-  // pkt.type = 1;
-  // pkt.seq_num = 0;
   pkt[0] = '1'; // type of packet
   pkt[1] = '0'; // seq_num of packet
   // copy application data to payload field
@@ -205,17 +203,14 @@ int rdt_send(int fd, char * msg, int length){
   }
   printf("rdt_send msg of size%d\n", length+4);
   //set flag as 0, requires checking
-  //what is returning from  udt_send()?
-  //Ans: the # of bytes sent
 
   struct timeval timer;
   //setting description set
-  fd_set master;
   fd_set read_fds;
-  FD_ZERO(&master);
   FD_ZERO(&read_fds);
 
-  FD_SET(fd, &master);
+  FD_SET(fd, &read_fds);
+  printf("fd: %d\n", fd);
 
   int status;
   u8b_t buf[4]; //header size
@@ -224,15 +219,15 @@ int rdt_send(int fd, char * msg, int length){
   for(;;) {
 	  //repeat until received expected ACK
 
-	  read_fds = master;
 	  //setting timeout
 	  timer.tv_sec = 5;
 	  timer.tv_usec = 0;
 	  // <0 => error
 	  // ==0 => timeout
 	  // >0 => receive a packet
-	  if ((status = select(fd, &read_fds, NULL, NULL, &timer)) == -1){
-	  	printf("Status -1\n");
+	  status = select(fd, &read_fds, NULL, NULL, &timer);
+	  printf("select status: %d\n", status);
+	  if (status == -1){
 	  	perror("select ");
 	  	exit(4);
 	  } else if(status == 0){
@@ -243,12 +238,17 @@ int rdt_send(int fd, char * msg, int length){
 	  		perror("send");
 	  	}
 	  	printf("Retrans msg of size%d\n", length+4);
+	  	continue;
 	  }
-	  else{ //this else may be replaced by a loop
-	  	printf("Status >0\n");
+	  // else{ //this else may be replaced by a loop
+	  for(;;){
+	  	printf("FDISSET mistake, fd: %d\n", fd);
 	  	if (FD_ISSET(fd, &read_fds)){
 	  		//if corrupted
-	  		u16b_t ACK_check;
+	  		u16b_t ACK_check = checksum(buf, 4);
+	  		u8b_t checksum_in_char[2];
+			memcpy(&checksum_in_char[0], (unsigned char*)&ACK_check, 2);
+			printf("checksum_in_char: %c, %c\n", checksum_in_char[0], checksum_in_char[1]);
 	  		if ((nbytes = recv(fd, buf, sizeof buf, 0)) <= 0) {
 				// got error or connection closed by client
 				if (nbytes == 0) {
@@ -258,27 +258,31 @@ int rdt_send(int fd, char * msg, int length){
 					perror("recv");
 				}
 				close(fd); // bye!
-				FD_CLR(fd, &master); // remove from master set
-			}else if ((ACK_check = checksum(buf, 4)) != 0){
+				FD_CLR(fd, &read_fds); // remove from master set
+			}else if (checksum_in_char[0]!='0' || checksum_in_char[1]!='0'){
 				//message corrupted
 				perror("corrupted");
 				//the timer should not be reset
 			}
 			else{
 				//if is ACK
-				if (buf[0] == 0){
+				printf("I fuck receive an ACK\n");
+				if (buf[0] == '0'){
 					//by this we assume that checksum has guaranteed no error will occur
 					if (last_acknum == buf[1]){
 						//not the expected ACK, just ignore it
 					}
 					else{
+						printf("obviously not equal= =\n");
 						if (last_acknum == '1'){
 							last_acknum = '0';
+							printf("receive ACK0\n");
 							//break the for loop
 							return length;
 						}
 						else{
 							last_acknum = '1';
+							printf("receive ACK1\n");
 							return length;
 						}
 					}
@@ -304,6 +308,7 @@ int rdt_send(int fd, char * msg, int length){
 */
 int rdt_recv(int fd, char * msg, int length){
 //implement the Stop-and-Wait ARQ (rdt3.0) logic
+	printf("sender fd: %d\n", fd);
 	for(;;) {
 		int receiveBytes = recv(fd, msg, length, 0);
 		printf("receive msg of size %d\n", receiveBytes);
@@ -323,13 +328,14 @@ int rdt_recv(int fd, char * msg, int length){
 		memcpy(&checksum_in_char[0], (unsigned char*)&ckm, 2);
 		//make ACK packet
 		ACK ack;
-		ack[0] = '0';
+		ack[0] = '0'; //packet type, 0 is ACK
 		ack[2] = '0';
 		ack[3] = '0';
 		if (checksum_in_char[0] != '0' || checksum_in_char[1] != '0'){
 			//corrupted
 			printf("recv corrupted\n");
-			ack[1] = last_acknum;
+			// ack[1] = last_acknum;
+			ack[1] = expectedseqnum;
 			//calculate checksum for ACK
 			u16b_t ckm = checksum(ack, 4);
 			//set checksum in the header
@@ -338,16 +344,15 @@ int rdt_recv(int fd, char * msg, int length){
 			if (udt_send(fd, ack, 4, 0) == -1){
 				perror("send");
 			}
+			else{
+				printf("resend ACK%c\n", expectedseqnum);
+			}
 		}else{
 			if (msg[0] == '1'){
 				//is DATA
-				printf("I am data\n");
-				char expectedseqnum_char[1];
-				sprintf(expectedseqnum_char,"%d" ,expectedseqnum);
-				printf("expectedseqnum: %c\n", expectedseqnum_char[0]);
-				if (msg[1] == expectedseqnum_char[0]){
-					printf("auto trans\n");
-					if (last_acknum == '0'){
+				if (msg[1] == expectedseqnum){
+					printf("fuck\n");
+					if (msg[1] == '1'){
 						ack[1] = '1';
 						u16b_t ckm = checksum(ack, 4);
 						memcpy(&ack[2], (unsigned char*)&ckm, 2);
@@ -355,20 +360,27 @@ int rdt_recv(int fd, char * msg, int length){
 							perror("send");
 						}
 						else{
+							printf("ACK1 sent\n");
+							expectedseqnum = '0';
 							return receiveBytes;
 						}
 					}
 					else{
-						ack[1] = 0;
+						ack[1] = '0';
 						u16b_t ckm = checksum(ack, 4);
 						memcpy(&ack[2], (unsigned char*)&ckm, 2);
 						if (udt_send(fd, ack, 4, 0) == -1){
 							perror("send");
 						}
 						else{
+							printf("ACK0 sent\n");
+							expectedseqnum = '1';
 							return receiveBytes;
 						}
 					}
+				}else{
+					//not expected data, should handle
+					printf("fuckfuckfuckfufkcufkuc\n");
 				}
 			}else{
 				//is ACK
