@@ -111,20 +111,6 @@ int expectedseqnum = '0'; //receiver use
 //last acknum
 u8b_t last_acknum = '1';
 
-// typedef struct Packet
-// {
-// 	// int type; // 1 for data packet, 0 for ACK
-// 	// int seq_num;
-// 	u8b_t type; //data packet or ACK packet
-// 	u8b_t seq_num; //for SW, only 0 & 1 used
-// 	// u16b_t checksum;
-
-// 	u8b_t msg[PAYLOAD];
-// }Packet;
-
-
-
-
 int rdt_socket();
 int rdt_bind(int fd, u16b_t port);
 int rdt_target(int fd, char * peer_name, u16b_t peer_port);
@@ -186,7 +172,11 @@ int rdt_send(int fd, char * msg, int length){
   Packet pkt;
   //control info
   pkt[0] = '1'; // type of packet
-  pkt[1] = '0'; // seq_num of packet
+  if (last_acknum == '1'){
+  	pkt[1] = '0';
+  }else{
+  	pkt[1] = '1';
+  }
   // copy application data to payload field
   memcpy(&pkt[4], msg, length); // length of data
   //set checksum field to zero
@@ -225,8 +215,7 @@ int rdt_send(int fd, char * msg, int length){
 	  // <0 => error
 	  // ==0 => timeout
 	  // >0 => receive a packet
-	  status = select(fd, &read_fds, NULL, NULL, &timer);
-	  printf("select status: %d\n", status);
+	  status = select(fd+1, &read_fds, NULL, NULL, &timer);//why MUST be fd+1?
 	  if (status == -1){
 	  	perror("select ");
 	  	exit(4);
@@ -242,14 +231,13 @@ int rdt_send(int fd, char * msg, int length){
 	  }
 	  // else{ //this else may be replaced by a loop
 	  for(;;){
-	  	printf("FDISSET mistake, fd: %d\n", fd);
 	  	if (FD_ISSET(fd, &read_fds)){
-	  		//if corrupted
+	  		nbytes = recv(fd, buf, sizeof buf, 0);
 	  		u16b_t ACK_check = checksum(buf, 4);
 	  		u8b_t checksum_in_char[2];
 			memcpy(&checksum_in_char[0], (unsigned char*)&ACK_check, 2);
 			printf("checksum_in_char: %c, %c\n", checksum_in_char[0], checksum_in_char[1]);
-	  		if ((nbytes = recv(fd, buf, sizeof buf, 0)) <= 0) {
+	  		if (nbytes <= 0) {
 				// got error or connection closed by client
 				if (nbytes == 0) {
 				// connection closed
@@ -266,18 +254,17 @@ int rdt_send(int fd, char * msg, int length){
 			}
 			else{
 				//if is ACK
-				printf("I fuck receive an ACK\n");
+				printf("I fucking receive an ACK\n");
 				if (buf[0] == '0'){
 					//by this we assume that checksum has guaranteed no error will occur
 					if (last_acknum == buf[1]){
 						//not the expected ACK, just ignore it
+						printf("not expected ACK\n");
 					}
 					else{
-						printf("obviously not equal= =\n");
 						if (last_acknum == '1'){
 							last_acknum = '0';
 							printf("receive ACK0\n");
-							//break the for loop
 							return length;
 						}
 						else{
@@ -289,7 +276,7 @@ int rdt_send(int fd, char * msg, int length){
 				}
 				else {
 					//if is data
-
+					printf("errrrrrrrrrrrrrrrrrrrrrr\n");
 					//this is a sender, how can we receive it
 					//ignore it
 				}
@@ -322,6 +309,7 @@ int rdt_recv(int fd, char * msg, int length){
 		}
 		//msg is the packet
 		//type cast for checksum
+		printf("length of recv msg: %d\n", receiveBytes);
 		u8b_t* checksum_msg = (u8b_t*)msg;
 		u16b_t ckm = checksum(checksum_msg, receiveBytes);
 		u8b_t checksum_in_char[2];
@@ -331,6 +319,7 @@ int rdt_recv(int fd, char * msg, int length){
 		ack[0] = '0'; //packet type, 0 is ACK
 		ack[2] = '0';
 		ack[3] = '0';
+		printf("checksum_in_char: %c, %c\n", checksum_in_char[0], checksum_in_char[1]);
 		if (checksum_in_char[0] != '0' || checksum_in_char[1] != '0'){
 			//corrupted
 			printf("recv corrupted\n");
@@ -350,8 +339,8 @@ int rdt_recv(int fd, char * msg, int length){
 		}else{
 			if (msg[0] == '1'){
 				//is DATA
+				printf("expected sequence num=%c\n", expectedseqnum);
 				if (msg[1] == expectedseqnum){
-					printf("fuck\n");
 					if (msg[1] == '1'){
 						ack[1] = '1';
 						u16b_t ckm = checksum(ack, 4);
