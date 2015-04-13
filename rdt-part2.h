@@ -107,9 +107,13 @@ typedef u8b_t ACK[4];
 
 //global variables
 //expected seq num
-int expectedseqnum = '0'; //receiver use
+u8b_t expectedseqnum = '0'; //receiver use
 //last acknum
 u8b_t last_acknum = '1';
+
+u8b_t last_send = '0';
+
+
 
 int rdt_socket();
 int rdt_bind(int fd, u16b_t port);
@@ -207,9 +211,9 @@ int rdt_send(int fd, char * msg, int length){
 	  //repeat until received expected ACK
   	  FD_SET(fd, &read_fds); // move this inside can solve this problem
 	  //setting timeout
-	  timer.tv_sec = 5;
-	  timer.tv_usec = 0;
-	  // timer.tv_usec = TWAIT;
+	  timer.tv_sec = 0;
+	  // timer.tv_usec = 0;
+	  timer.tv_usec = TWAIT;
 	  // <0 => error
 	  // ==0 => timeout
 	  // >0 => receive a packet
@@ -233,8 +237,6 @@ int rdt_send(int fd, char * msg, int length){
 	  	if (FD_ISSET(fd, &read_fds)){
 	  		int nbytes;
 	  		nbytes = recv(fd, buf, sizeof buf, 0);
-	  		for (int i=0; i<nbytes; i++)
-	  			printf("DEBUG buf[%d]=%u\n", i, buf[i]);
 	  		u16b_t ACK_check = checksum(buf, 4);
 	  		u8b_t checksum_in_char[2];
 			memcpy(&checksum_in_char[0], (unsigned char*)&ACK_check, 2);
@@ -249,37 +251,76 @@ int rdt_send(int fd, char * msg, int length){
 				}
 				// close(fd); // bye!
 				// FD_CLR(fd, &read_fds); // remove from master set
-			}else if (checksum_in_char[0]!='0' || checksum_in_char[1]!='0'){
-				//message corrupted
-				perror("corrupted");
 			}
-			else{
-				//if is ACK
-				if (buf[0] == '0'){
-					//by this we assume that checksum has guaranteed no error will occur
-					printf("EXPECTTTTTTTing ACK = converse(%c)\n", last_acknum);
-					if (last_acknum == buf[1]){
-						//not the expected ACK
-						printf("not expected ACK\n");
+			else {
+				//no error in transmission
+				if (checksum_in_char[0]!='0' || checksum_in_char[1]!='0'){
+					//not necessarily corrupted
+					//ACK
+					if (buf[0] == '0'){
+						perror("corrupted");
+						break;
 					}
 					else{
-						if (last_acknum == '1'){
-							last_acknum = '0';
-							printf("receive ACK0\n");
-							return length+4;
+						//data, retransmit the ACK because of packet loss previously
+						ACK ack;
+						ack[0] = '0'; //packet type, 0 is ACK
+						ack[2] = '0';
+						ack[3] = '0';
+						// if (expectedseqnum =='0')
+						// 	ack[1] = '1';
+						// else
+						// 	ack[1] = '0';
+						if (last_send == '0'){
+							ack[1] = '1';
+						}else{
+							ack[1] = '0';
+						}
+						last_send = ack[1];
+						//calculate checksum for ACK
+						u16b_t ckm = checksum(ack, 4);
+						// printf("unsigned short ckm: %hu\n", ckm);
+						//set checksum in the header
+						memcpy(&ack[2], (unsigned char*)&ckm, 2);
+						//so resend the ACK
+						if (udt_send(fd, ack, 4, 0) == -1){
+							perror("send");
 						}
 						else{
-							last_acknum = '1';
-							printf("receive ACK1\n");
-							return length+4;
+							printf("Sender resend ACK%c\n", ack[1]);
+							break;
+							// return 4;
 						}
 					}
 				}
-				else {
-					//if is data
-					printf("SENDER receive Dataaaaaaaaaaaaaaaaaaaa\n");
-					//this is a sender, how can we receive it
-					//ignore it
+				else{
+					//if is ACK
+					if (buf[0] == '0'){
+						//by this we assume that checksum has guaranteed no error will occur
+						printf("EXPECTTTTTTTing ACK = converse(%c)\n", last_acknum);
+						if (last_acknum == buf[1]){
+							//not the expected ACK
+							printf("not expected ACK\n");
+						}
+						else{
+							if (last_acknum == '1'){
+								last_acknum = '0';
+								printf("receive ACK0000\n");
+								return length+4;
+							}
+							else{
+								last_acknum = '1';
+								printf("receive ACK1111\n");
+								return length+4;
+							}
+						}
+					}
+					// else {
+					// 	//if is data
+					// 	printf("SENDER receive Dataaaaaaaaaaaaaaaaaaaa\n");
+					// 	//this is a sender, how can we receive it
+					// 	//ignore it
+					// }
 				}
 			}
 	  	}
@@ -297,6 +338,7 @@ int rdt_send(int fd, char * msg, int length){
 int rdt_recv(int fd, char * msg, int length){
 //implement the Stop-and-Wait ARQ (rdt3.0) logic
 	for(;;) {
+		printf("waiting for receive\n");
 		int receiveBytes = recv(fd, msg, length+4, 0);
 		printf("receive msg of size %d\n", receiveBytes);
 		if (receiveBytes <= 0){
@@ -327,14 +369,13 @@ int rdt_recv(int fd, char * msg, int length){
 			// printf("unsigned short ckm: %hu\n", ckm);
 			//set checksum in the header
 			memcpy(&ack[2], (unsigned char*)&ckm, 2);
-			// for (int i=0; i<4; i++)
-	  // 			printf("DEBUG ack[%d]=%c\n", i, ack[i]);
 			//so resend the ACK
 			if (udt_send(fd, ack, 4, 0) == -1){
 				perror("send");
 			}
 			else{
 				printf("resend ACK%c\n", expectedseqnum);
+				return 0;
 			}
 		}else{
 			if (msg[0] == '1'){
@@ -345,8 +386,6 @@ int rdt_recv(int fd, char * msg, int length){
 						u16b_t ckm = checksum(ack, 4);
 						printf("unsigned short ckm: %hu\n", ckm);
 						memcpy(&ack[2], (unsigned char*)&ckm, 2);
-							for (int i=0; i<4; i++)
-		  						printf("DEBUG ack[%d]=%u\n", i, ack[i]);
 						if (udt_send(fd, ack, 4, 0) == -1){
 							perror("send");
 						}
@@ -365,8 +404,6 @@ int rdt_recv(int fd, char * msg, int length){
 						u16b_t ckm = checksum(ack, 4);
 						printf("unsigned short ckm: %hu\n", ckm);
 						memcpy(&ack[2], (unsigned char*)&ckm, 2);
-							for (int i=0; i<4; i++)
-			  						printf("DEBUG ack[%d]=%u\n", i, ack[i]);
 						if (udt_send(fd, ack, 4, 0) == -1){
 							perror("send");
 						}
@@ -386,11 +423,9 @@ int rdt_recv(int fd, char * msg, int length){
 					printf("EXpecting data= %c\n", expectedseqnum);
 					if (expectedseqnum == '0'){
 						ack[1] = '1';
-						// printf("resend ACK%c\n", ack[1]);
 					}
 					else{
 						ack[1] = '0';
-						// printf("resend ACK%c\n", ack[1]);
 					}
 					//calculate checksum for ACK
 					u16b_t ckm = checksum(ack, 4);
@@ -402,6 +437,7 @@ int rdt_recv(int fd, char * msg, int length){
 					}
 					else{
 						printf("resend ACK%c\n", ack[1]);
+						return 0;
 					}
 				}
 			}else{
@@ -426,8 +462,8 @@ int rdt_close(int fd){
 	int status;
 	for (;;){
 		//setting timeout
-		timer.tv_sec = 5;
-		timer.tv_usec = 0;
+		timer.tv_sec = 0;
+		timer.tv_usec = TWAIT;
 		status = select(fd+1, &read_fds, NULL, NULL, &timer);
 		printf("close status %d\n", status);
 		if (status == -1){
