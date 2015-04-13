@@ -42,7 +42,7 @@ int main(int argc, char *argv[]){
 	}	
 
 	/* update random seed */
-	// srand(time(NULL));
+	srand(time(NULL));
 	/* remove the above line if you want to get the same random 
 	   sequence for each run - good for testing */
 	

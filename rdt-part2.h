@@ -199,20 +199,21 @@ int rdt_send(int fd, char * msg, int length){
 
   // FD_SET(fd, &read_fds);
 
-  int status;
+  
   u8b_t buf[4]; //header size
-  int nbytes;
+
   //do
   for(;;) {
 	  //repeat until received expected ACK
   	  FD_SET(fd, &read_fds); // move this inside can solve this problem
 	  //setting timeout
-	  timer.tv_sec = 0;
-	  // timer.tv_usec = 0;
-	  timer.tv_usec = TWAIT;
+	  timer.tv_sec = 5;
+	  timer.tv_usec = 0;
+	  // timer.tv_usec = TWAIT;
 	  // <0 => error
 	  // ==0 => timeout
 	  // >0 => receive a packet
+	  int status;
 	  status = select(fd+1, &read_fds, NULL, NULL, &timer);
 	  if (status == -1){
 	  	perror("select ");
@@ -230,11 +231,14 @@ int rdt_send(int fd, char * msg, int length){
 	  // else{ //this else may be replaced by a loop
 	  for(;;){
 	  	if (FD_ISSET(fd, &read_fds)){
+	  		int nbytes;
 	  		nbytes = recv(fd, buf, sizeof buf, 0);
+	  		for (int i=0; i<nbytes; i++)
+	  			printf("DEBUG buf[%d]=%u\n", i, buf[i]);
 	  		u16b_t ACK_check = checksum(buf, 4);
 	  		u8b_t checksum_in_char[2];
 			memcpy(&checksum_in_char[0], (unsigned char*)&ACK_check, 2);
-			printf("checksum_in_char: %c, %c\n", checksum_in_char[0], checksum_in_char[1]);
+			printf("checksum_in_char: %u, %u\n", checksum_in_char[0], checksum_in_char[1]);
 	  		if (nbytes <= 0) {
 				// got error or connection closed by client
 				if (nbytes == 0) {
@@ -248,12 +252,9 @@ int rdt_send(int fd, char * msg, int length){
 			}else if (checksum_in_char[0]!='0' || checksum_in_char[1]!='0'){
 				//message corrupted
 				perror("corrupted");
-				// FD_SET(fd, &read_fds);
-				//the timer should not be reset
 			}
 			else{
 				//if is ACK
-				printf("BUFFER[0] = %c\n", buf[0]);
 				if (buf[0] == '0'){
 					//by this we assume that checksum has guaranteed no error will occur
 					printf("EXPECTTTTTTTing ACK = converse(%c)\n", last_acknum);
@@ -315,7 +316,7 @@ int rdt_recv(int fd, char * msg, int length){
 		ack[0] = '0'; //packet type, 0 is ACK
 		ack[2] = '0';
 		ack[3] = '0';
-		printf("checksum_in_char: %c, %c\n", checksum_in_char[0], checksum_in_char[1]);
+		printf("checksum_in_char: %u, %u\n", checksum_in_char[0], checksum_in_char[1]);
 		if (checksum_in_char[0] != '0' || checksum_in_char[1] != '0'){
 			//corrupted
 			printf("recv corrupted\n");
@@ -323,8 +324,11 @@ int rdt_recv(int fd, char * msg, int length){
 			ack[1] = expectedseqnum;
 			//calculate checksum for ACK
 			u16b_t ckm = checksum(ack, 4);
+			// printf("unsigned short ckm: %hu\n", ckm);
 			//set checksum in the header
 			memcpy(&ack[2], (unsigned char*)&ckm, 2);
+			// for (int i=0; i<4; i++)
+	  // 			printf("DEBUG ack[%d]=%c\n", i, ack[i]);
 			//so resend the ACK
 			if (udt_send(fd, ack, 4, 0) == -1){
 				perror("send");
@@ -339,7 +343,10 @@ int rdt_recv(int fd, char * msg, int length){
 					if (msg[1] == '1'){
 						ack[1] = '1';
 						u16b_t ckm = checksum(ack, 4);
+						printf("unsigned short ckm: %hu\n", ckm);
 						memcpy(&ack[2], (unsigned char*)&ckm, 2);
+							for (int i=0; i<4; i++)
+		  						printf("DEBUG ack[%d]=%u\n", i, ack[i]);
 						if (udt_send(fd, ack, 4, 0) == -1){
 							perror("send");
 						}
@@ -356,7 +363,10 @@ int rdt_recv(int fd, char * msg, int length){
 					else{
 						ack[1] = '0';
 						u16b_t ckm = checksum(ack, 4);
+						printf("unsigned short ckm: %hu\n", ckm);
 						memcpy(&ack[2], (unsigned char*)&ckm, 2);
+							for (int i=0; i<4; i++)
+			  						printf("DEBUG ack[%d]=%u\n", i, ack[i]);
 						if (udt_send(fd, ack, 4, 0) == -1){
 							perror("send");
 						}
