@@ -84,6 +84,7 @@ int main(int argc, char *argv[]){
     //send the file name to server
     rdt_send(sockfd, fname, strlen(fname));
     
+    
 	//wait for server response
     memset(msg, '\0', MSG_LEN);
 	len = rdt_recv(sockfd, msg, MSG_LEN);
