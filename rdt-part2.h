@@ -111,7 +111,10 @@ u8b_t expectedseqnum = '0'; //receiver use
 //last acknum
 u8b_t last_acknum = '1';
 
-int flag = 0;
+int sender_count = 0;
+int client_sender_already_to_receiver = 0;
+int server_fd = 0;
+int client_fd = 0;
 
 int rdt_socket();
 int rdt_bind(int fd, u16b_t port);
@@ -169,6 +172,9 @@ int rdt_target(int fd, char * peer_name, u16b_t peer_port){
 */
 int rdt_send(int fd, char * msg, int length){
 //implement the Stop-and-Wait ARQ (rdt3.0) logic
+  if (server_fd == 0)
+  	server_fd = fd; //set up only once
+  sender_count++;
   Packet pkt;
   //control info
   pkt[0] = '1'; // type of packet
@@ -257,38 +263,36 @@ int rdt_send(int fd, char * msg, int length){
 					}
 					else{
 						//not a very good scheme for detecting data, the first bit can be corrupted
-						//data, retransmit the ACK because of packet loss previously
+						//data
 						ACK ack;
 						ack[0] = '0'; //packet type, 0 is ACK
 						ack[2] = '0';
 						ack[3] = '0';
 						ack[1] = '0';//it can only 0 based on the sequence
-						//calculate checksum for ACK
-						u16b_t ckm = checksum(ack, 4);
-						// printf("unsigned short ckm: %hu\n", ckm);
-						//set checksum in the header
-						memcpy(&ack[2], (unsigned char*)&ckm, 2);
-						//set the flag
-						flag = 1;
 						//so resend the ACK if it's only if it's "old"
-						if (last_acknum == '1'){
-							
+						// printf("senderCOUNT = %d\n", sender_count);
+						if (fd == client_fd){
+							//ignore the new data msg
+							ack[1] = '1';
+							u16b_t ckm = checksum(ack, 4);
+							memcpy(&ack[2], (unsigned char*)&ckm, 2);
+							udt_send(fd, ack, 4, 0);
+							printf("UNIQUE ACK1 sent\n");
+							break;
 						}
-						else{
+						else if (fd == server_fd && client_sender_already_to_receiver == 1){
+							u16b_t ckm = checksum(ack, 4);
+							memcpy(&ack[2], (unsigned char*)&ckm, 2);
 							if (udt_send(fd, ack, 4, 0) == -1){
-							perror("send");
+								perror("send");
 							}
 							else{
 								printf("Sender resend ACK%c\n", ack[1]);
 								break;
-								// int inner_status;
-								// inner_status = select(fd+1, &read_fds, NULL, NULL, &timer);
-								// printf("flag = %d\n", flag);
-								// if (flag == 0){
-								// 	break;
-								// }
-								// FD_SET(fd, &read_fds);
 							}
+						}
+						else{
+							//ignore
 						}
 					}
 				}
@@ -304,13 +308,13 @@ int rdt_send(int fd, char * msg, int length){
 							if (last_acknum == '1'){
 								last_acknum = '0';
 								printf("receive ACK0\n");
-								//unset the flag
-								flag = 0;
+								sender_count--;
 								return length+4;
 							}
 							else{
 								last_acknum = '1';
 								printf("receive ACK1\n");
+								sender_count--;
 								return length+4;
 							}
 						}
@@ -337,6 +341,10 @@ int rdt_send(int fd, char * msg, int length){
 */
 int rdt_recv(int fd, char * msg, int length){
 //implement the Stop-and-Wait ARQ (rdt3.0) logic
+	if (client_fd == 0)
+		client_fd = fd;
+	if (fd == server_fd)
+		client_sender_already_to_receiver = 1;
 	for(;;) {
 		int receiveBytes = recv(fd, msg, length+4, 0);
 		printf("receive msg of size %d\n", receiveBytes);
@@ -416,8 +424,6 @@ int rdt_recv(int fd, char * msg, int length){
 					}
 				}else{
 					//not expected data, resend last ACK
-					printf("NOT EXPECTED DATA\n");
-					printf("EXpecting data= %c\n", expectedseqnum);
 					if (expectedseqnum == '0'){
 						ack[1] = '1';
 						// printf("resend ACK%c\n", ack[1]);
@@ -494,6 +500,12 @@ int rdt_close(int fd){
 				memcpy(&ack[2], (char*)&ckm, 2);
 				if (udt_send(fd, ack, 4, 0) == -1){
 					perror("send");
+				}
+				else{
+					if (expectedseqnum == '0')
+						expectedseqnum = '1';
+					else
+						expectedseqnum = '0';
 				}
 			}
 		}
