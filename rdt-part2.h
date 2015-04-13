@@ -107,7 +107,7 @@ typedef u8b_t ACK[4];
 
 //global variables
 //expected seq num
-int expectedseqnum = '0'; //receiver use
+u8b_t expectedseqnum = '0'; //receiver use
 //last acknum
 u8b_t last_acknum = '1';
 
