@@ -113,6 +113,7 @@ u8b_t last_acknum = '1';
 
 int sender_count = 0;
 int client_sender_already_to_receiver = 0;
+int client_sender_already_back_to_sender = 0;
 int server_fd = 0;
 int client_fd = 0;
 
@@ -174,6 +175,8 @@ int rdt_send(int fd, char * msg, int length){
 //implement the Stop-and-Wait ARQ (rdt3.0) logic
   if (server_fd == 0)
   	server_fd = fd; //set up only once
+  if (client_sender_already_to_receiver == 1)
+  	client_sender_already_back_to_sender = 1;
   sender_count++;
   Packet pkt;
   //control info
@@ -259,7 +262,7 @@ int rdt_send(int fd, char * msg, int length){
 					//not necessarily corrupted
 					if (buf[0] == '0'){
 						perror("corrupted");
-						// break;
+						break;
 					}
 					else{
 						//not a very good scheme for detecting data, the first bit can be corrupted
@@ -271,7 +274,7 @@ int rdt_send(int fd, char * msg, int length){
 						ack[1] = '0';//it can only 0 based on the sequence
 						//so resend the ACK if it's only if it's "old"
 						// printf("senderCOUNT = %d\n", sender_count);
-						if (fd == client_fd){
+						if (fd == client_fd && client_sender_already_back_to_sender != 1){
 							//ignore the new data msg
 							ack[1] = '1';
 							u16b_t ckm = checksum(ack, 4);
@@ -287,7 +290,7 @@ int rdt_send(int fd, char * msg, int length){
 								perror("send");
 							}
 							else{
-								printf("Sender resend ACK%c\n", ack[1]);
+								printf("UNIQUE ACK0 sent\n");
 								break;
 							}
 						}
@@ -303,6 +306,9 @@ int rdt_send(int fd, char * msg, int length){
 						if (last_acknum == buf[1]){
 							//not the expected ACK
 							printf("not expected ACK\n");
+							send = udt_send(fd, pkt, length+4, 0);
+							printf("Retrans msg of size%d, seq#=%c\n", length+4, pkt[1]);
+							break;
 						}
 						else{
 							if (last_acknum == '1'){
@@ -365,11 +371,14 @@ int rdt_recv(int fd, char * msg, int length){
 		ack[0] = '0'; //packet type, 0 is ACK
 		ack[2] = '0';
 		ack[3] = '0';
-		printf("checksum_in_char: %u, %u\n", checksum_in_char[0], checksum_in_char[1]);
+		// printf("checksum_in_char: %u, %u\n", checksum_in_char[0], checksum_in_char[1]);
 		if (checksum_in_char[0] != '0' || checksum_in_char[1] != '0'){
 			//corrupted
 			printf("recv corrupted\n");
-			ack[1] = expectedseqnum;
+			if (expectedseqnum == '0')
+				ack[1] = '1';
+			else
+				ack[1] = '0';
 			//calculate checksum for ACK
 			u16b_t ckm = checksum(ack, 4);
 			// printf("unsigned short ckm: %hu\n", ckm);
@@ -380,7 +389,7 @@ int rdt_recv(int fd, char * msg, int length){
 				perror("send");
 			}
 			else{
-				printf("resend ACK%c\n", expectedseqnum);
+				printf("resend ACK%c\n", ack[1]);
 			}
 		}else{
 			if (msg[0] == '1'){
