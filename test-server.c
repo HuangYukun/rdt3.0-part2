@@ -108,6 +108,7 @@ int main(int argc, char *argv[]) {
     	fwrite(msg, sizeof(char), len, testfile);
     	received += len;
     	printf("Received a message of size %d bytes\n", len);
+    	printf("received vs file_len, %d vs %d \n", received, file_len);
     }
 
 	printf("Complete the file transfer.\n");
