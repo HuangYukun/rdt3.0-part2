@@ -208,7 +208,7 @@ int rdt_send(int fd, char * msg, int length){
   fd_set read_fds;
   FD_ZERO(&read_fds);
 
-  // FD_SET(fd, &read_fds);
+  FD_SET(fd, &read_fds);
 
   
   u8b_t buf[4]; //header size
@@ -216,7 +216,7 @@ int rdt_send(int fd, char * msg, int length){
   //do
   for(;;) {
 	  //repeat until received expected ACK
-  	  FD_SET(fd, &read_fds); // move this inside can solve this problem
+  	  // FD_SET(fd, &read_fds); // move this inside can solve this problem
 	  //setting timeout
 	  timer.tv_sec = 0;
 	  // timer.tv_usec = 0;
@@ -237,6 +237,7 @@ int rdt_send(int fd, char * msg, int length){
 	  		perror("send");
 	  	}
 	  	printf("Retrans msg of size%d, seq#=%c\n", length+4, pkt[1]);
+	  	FD_SET(fd, &read_fds);
 	  	continue;
 	  }
 	  for(;;){
@@ -246,7 +247,7 @@ int rdt_send(int fd, char * msg, int length){
 	  		u16b_t ACK_check = checksum(buf, 4);
 	  		u8b_t checksum_in_char[2];
 			memcpy(&checksum_in_char[0], (unsigned char*)&ACK_check, 2);
-			printf("checksum_in_char: %u, %u\n", checksum_in_char[0], checksum_in_char[1]);
+			// printf("checksum_in_char: %u, %u\n", checksum_in_char[0], checksum_in_char[1]);
 	  		if (nbytes <= 0) {
 				// got error or connection closed by client
 				if (nbytes == 0) {
@@ -281,6 +282,7 @@ int rdt_send(int fd, char * msg, int length){
 							memcpy(&ack[2], (unsigned char*)&ckm, 2);
 							udt_send(fd, ack, 4, 0);
 							printf("UNIQUE ACK1 sent\n");
+							FD_SET(fd, &read_fds);
 							break;
 						}
 						else if (fd == server_fd && client_sender_already_to_receiver == 1){
@@ -291,11 +293,13 @@ int rdt_send(int fd, char * msg, int length){
 							}
 							else{
 								printf("UNIQUE ACK0 sent\n");
+								FD_SET(fd, &read_fds);
 								break;
 							}
 						}
 						else{
 							//ignore
+							break;
 						}
 					}
 				}
@@ -308,6 +312,7 @@ int rdt_send(int fd, char * msg, int length){
 							printf("not expected ACK\n");
 							send = udt_send(fd, pkt, length+4, 0);
 							printf("Retrans msg of size%d, seq#=%c\n", length+4, pkt[1]);
+							FD_SET(fd, &read_fds);
 							break;
 						}
 						else{
