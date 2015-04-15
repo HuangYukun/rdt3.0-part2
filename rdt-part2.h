@@ -199,9 +199,8 @@ int rdt_send(int fd, char * msg, int length){
   if((send = udt_send(fd, pkt, length+4, 0)) == -1){
   	perror("send");
   }
-  printf("rdt_send msg of size%d\n", length+4);
-  printf("packet of seq # = %c\n", pkt[1]);
-  //set flag as 0, requires checking
+  // printf("rdt_send msg of size%d\n", length+4);
+  // printf("packet of seq # = %c\n", pkt[1]);
 
   struct timeval timer;
   //setting description set
@@ -311,7 +310,7 @@ int rdt_send(int fd, char * msg, int length){
 							//not the expected ACK
 							printf("not expected ACK\n");
 							send = udt_send(fd, pkt, length+4, 0);
-							printf("Retrans msg of size%d, seq#=%c\n", length+4, pkt[1]);
+							// printf("Retrans msg of size%d, seq#=%c\n", length+4, pkt[1]);
 							FD_SET(fd, &read_fds);
 							break;
 						}
@@ -493,7 +492,6 @@ int rdt_close(int fd){
 		timer.tv_sec = 0;
 		timer.tv_usec = TWAIT;
 		status = select(fd+1, &read_fds, NULL, NULL, &timer);
-		printf("close status %d\n", status);
 		if (status == -1){
 		  	perror("select ");
 		  	exit(4);
