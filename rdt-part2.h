@@ -111,7 +111,7 @@ u8b_t expectedseqnum = '0'; //receiver use
 //last acknum
 u8b_t last_acknum = '1';
 
-int sender_count = 0;
+
 int client_sender_already_to_receiver = 0;
 int client_sender_already_back_to_sender = 0;
 int server_fd = 0;
@@ -177,7 +177,6 @@ int rdt_send(int fd, char * msg, int length){
   	server_fd = fd; //set up only once
   if (client_sender_already_to_receiver == 1)
   	client_sender_already_back_to_sender = 1;
-  sender_count++;
   Packet pkt;
   //control info
   pkt[0] = '1'; // type of packet
@@ -215,10 +214,8 @@ int rdt_send(int fd, char * msg, int length){
   //do
   for(;;) {
 	  //repeat until received expected ACK
-  	  // FD_SET(fd, &read_fds); // move this inside can solve this problem
 	  //setting timeout
 	  timer.tv_sec = 0;
-	  // timer.tv_usec = 0;
 	  timer.tv_usec = TIMEOUT;
 	  // <0 => error
 	  // ==0 => timeout
@@ -255,8 +252,6 @@ int rdt_send(int fd, char * msg, int length){
 				} else {
 					perror("recv");
 				}
-				// close(fd); // bye!
-				// FD_CLR(fd, &read_fds); // remove from master set
 			}else {
 				if (checksum_in_char[0]!='0' || checksum_in_char[1]!='0'){
 					//not necessarily corrupted
@@ -273,7 +268,6 @@ int rdt_send(int fd, char * msg, int length){
 						ack[3] = '0';
 						ack[1] = '0';//it can only 0 based on the sequence
 						//so resend the ACK if it's only if it's "old"
-						// printf("senderCOUNT = %d\n", sender_count);
 						if (fd == client_fd && client_sender_already_back_to_sender != 1){
 							//ignore the new data msg
 							ack[1] = '1';
@@ -318,13 +312,11 @@ int rdt_send(int fd, char * msg, int length){
 							if (last_acknum == '1'){
 								last_acknum = '0';
 								printf("receive ACK0\n");
-								sender_count--;
 								return length+4;
 							}
 							else{
 								last_acknum = '1';
 								printf("receive ACK1\n");
-								sender_count--;
 								return length+4;
 							}
 						}
