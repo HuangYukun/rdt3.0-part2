@@ -321,12 +321,6 @@ int rdt_send(int fd, char * msg, int length){
 							}
 						}
 					}
-					else {
-						// //if is data
-						// printf("SENDER receive Dataaaaaaaaaaaaaaaaaaaa\n");
-						// //this is a sender, how can we receive it
-						// //ignore it
-					}
 				}
 			}
 	  	}
