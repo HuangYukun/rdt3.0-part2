@@ -1,12 +1,12 @@
 /**************************************************************
 rdt-part2.h
-Student name:
-Student No. :
-Date and version:
-Development platform:
-Development language:
+Student name: Huang Yukun
+Student No. : 3035030808
+Date and version: 4/13/2015, v1.0
+Development platform: Ubuntu 12.04
+Development language: C
 Compilation:
-	Can be compiled with
+	Can be compiled with g++
 *****************************************************************/
 
 #ifndef RDT2_H
@@ -220,7 +220,7 @@ int rdt_send(int fd, char * msg, int length){
 	  //setting timeout
 	  timer.tv_sec = 0;
 	  // timer.tv_usec = 0;
-	  timer.tv_usec = TWAIT;
+	  timer.tv_usec = TIMEOUT;
 	  // <0 => error
 	  // ==0 => timeout
 	  // >0 => receive a packet
@@ -371,7 +371,6 @@ int rdt_recv(int fd, char * msg, int length){
 		ack[0] = '0'; //packet type, 0 is ACK
 		ack[2] = '0';
 		ack[3] = '0';
-		// printf("checksum_in_char: %u, %u\n", checksum_in_char[0], checksum_in_char[1]);
 		if (checksum_in_char[0] != '0' || checksum_in_char[1] != '0'){
 			//corrupted
 			printf("recv corrupted\n");
@@ -398,7 +397,7 @@ int rdt_recv(int fd, char * msg, int length){
 					if (msg[1] == '1'){
 						ack[1] = '1';
 						u16b_t ckm = checksum(ack, 4);
-						printf("unsigned short ckm: %hu\n", ckm);
+						// printf("unsigned short ckm: %hu\n", ckm);
 						memcpy(&ack[2], (unsigned char*)&ckm, 2);
 						if (udt_send(fd, ack, 4, 0) == -1){
 							perror("send");
@@ -416,7 +415,7 @@ int rdt_recv(int fd, char * msg, int length){
 					else{
 						ack[1] = '0';
 						u16b_t ckm = checksum(ack, 4);
-						printf("unsigned short ckm: %hu\n", ckm);
+						// printf("unsigned short ckm: %hu\n", ckm);
 						memcpy(&ack[2], (unsigned char*)&ckm, 2);
 						if (udt_send(fd, ack, 4, 0) == -1){
 							perror("send");
@@ -435,11 +434,9 @@ int rdt_recv(int fd, char * msg, int length){
 					//not expected data, resend last ACK
 					if (expectedseqnum == '0'){
 						ack[1] = '1';
-						// printf("resend ACK%c\n", ack[1]);
 					}
 					else{
 						ack[1] = '0';
-						// printf("resend ACK%c\n", ack[1]);
 					}
 					//calculate checksum for ACK
 					u16b_t ckm = checksum(ack, 4);
@@ -485,6 +482,7 @@ int rdt_close(int fd){
 
 	FD_SET(fd, &read_fds);
 	int status;
+	u8b_t buf[4];
 	for (;;){
 		//setting timeout
 		timer.tv_sec = 0;
@@ -500,21 +498,31 @@ int rdt_close(int fd){
 		}
 		else{
 		  	if (FD_ISSET(fd, &read_fds)){
-		  		ACK ack;
-				ack[0] = '0';
-				ack[2] = '0';
-				ack[3] = '0';
-				ack[1] = expectedseqnum;//need to be modified/checked
-				u16b_t ckm = checksum(ack, 4);
-				memcpy(&ack[2], (char*)&ckm, 2);
-				if (udt_send(fd, ack, 4, 0) == -1){
-					perror("send");
+		  		recv(fd, buf, sizeof buf, 0);
+		  		u16b_t ACK_check = checksum(buf, 4);
+		  		u8b_t checksum_in_char[2];
+				memcpy(&checksum_in_char[0], (unsigned char*)&ACK_check, 2);
+				if (checksum_in_char[0] =='0' && checksum_in_char[1] =='0'){
+					//ACK
+					printf("get ACK, terminate\n");
 				}
 				else{
-					if (expectedseqnum == '0')
-						expectedseqnum = '1';
-					else
-						expectedseqnum = '0';
+					ACK ack;
+					ack[0] = '0';
+					ack[2] = '0';
+					ack[3] = '0';
+					ack[1] = expectedseqnum;//need to be modified/checked
+					u16b_t ckm = checksum(ack, 4);
+					memcpy(&ack[2], (char*)&ckm, 2);
+					if (udt_send(fd, ack, 4, 0) == -1){
+						perror("send");
+					}
+					else{
+						if (expectedseqnum == '0')
+							expectedseqnum = '1';
+						else
+							expectedseqnum = '0';
+					}
 				}
 			}
 		}
